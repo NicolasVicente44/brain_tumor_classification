@@ -20,10 +20,9 @@ from sklearn.metrics import (
     roc_auc_score,
     roc_curve,
 )
-from sklearn.tree import plot_tree
-from matplotlib.colors import ListedColormap
 
 
+# Load and preprocess data
 def load_and_preprocess_data(filepath):
     data = pd.read_csv(filepath)
 
@@ -52,14 +51,29 @@ def load_and_preprocess_data(filepath):
     return X_scaled, y, data
 
 
+# Perform exploratory data analysis
 def perform_eda(data):
     print("Columns in data:", data.columns)
     class_column = "Class"
-    plt.figure(figsize=(6, 4))
-    sns.countplot(x=class_column, data=data)
-    plt.title("Class Distribution")
-    plt.xlabel(f"{class_column} (0 = Non-Tumor, 1 = Tumor)")
-    plt.ylabel("Count")
+
+    class_counts = data[class_column].value_counts()
+    labels = [
+        f"Non-Tumor ({class_counts[0]} - {class_counts[0] / class_counts.sum() * 100:.2f}%)"
+        if label == 0 else f"Tumor ({class_counts[1]} - {class_counts[1] / class_counts.sum() * 100:.2f}%)"
+        for label in class_counts.index
+    ]
+
+    plt.figure(figsize=(10, 10))
+    plt.pie(
+        class_counts,
+        labels=labels,
+        autopct="%1.1f%%",
+        startangle=90,
+        colors=["#ff9999", "#66b3ff"],
+        labeldistance=1.1,
+    )
+    plt.title("Class Distribution (Counts and Percentages)")
+    plt.tight_layout()
     plt.show()
 
     numeric_data = data.select_dtypes(include=[np.number])
@@ -69,81 +83,28 @@ def perform_eda(data):
     plt.show()
 
 
-def plot_decision_boundary(X, y, model, title):
-    x_min, x_max = X[:, 0].min() - 1, X[:, 0].max() + 1
-    y_min, y_max = X[:, 1].min() - 1, X[:, 1].max() + 1
-    xx, yy = np.meshgrid(np.arange(x_min, x_max, 0.01), np.arange(y_min, y_max, 0.01))
-    Z = model.predict(np.c_[xx.ravel(), yy.ravel()])
-    Z = Z.reshape(xx.shape)
-    plt.contourf(xx, yy, Z, alpha=0.8, cmap=ListedColormap(("blue", "orange")))
-    plt.scatter(
-        X[:, 0], X[:, 1], c=y, edgecolor="k", cmap=ListedColormap(("blue", "orange"))
-    )
-    plt.title(title)
-    plt.xlabel("Feature 1")
-    plt.ylabel("Feature 2")
-    plt.show()
+# Engineer features
+def engineer_features(data):
+    data["Mean_Variance_Ratio"] = data["Mean"] / (data["Variance"] + 1e-5)
+    data["Energy_Entropy_Product"] = data["Energy"] * data["Entropy"]
+    data["Skewness_Kurtosis_Sum"] = data["Skewness"] + data["Kurtosis"]
+    data["Dissimilarity_Normalized"] = data["Dissimilarity"] / (data["ASM"] + 1e-5)
+    data["Contrast_Homogeneity_Diff"] = data["Contrast"] - data["Homogeneity"]
+    data["Entropy_Log"] = np.log(data["Entropy"] + 1e-5)
+    return data
 
-
-def plot_svm_margin(X, y, model):
-    plt.scatter(X[:, 0], X[:, 1], c=y, cmap="coolwarm", s=30)
-    ax = plt.gca()
-    xlim = ax.get_xlim()
-    ylim = ax.get_ylim()
-    xx, yy = np.meshgrid(
-        np.linspace(xlim[0], xlim[1], 50), np.linspace(ylim[0], ylim[1], 50)
-    )
-    Z = model.decision_function(np.c_[xx.ravel(), yy.ravel()])
-    Z = Z.reshape(xx.shape)
-    ax.contour(
-        xx,
-        yy,
-        Z,
-        colors="k",
-        levels=[-1, 0, 1],
-        alpha=0.7,
-        linestyles=["--", "-", "--"],
-    )
-    ax.scatter(
-        model.support_vectors_[:, 0],
-        model.support_vectors_[:, 1],
-        s=100,
-        linewidth=1,
-        facecolors="none",
-        edgecolors="k",
-    )
-    plt.title("SVM Decision Boundary and Margin")
-    plt.show()
-
-
-def plot_decision_tree(model, feature_names):
-    plt.figure(figsize=(12, 8))
-    plot_tree(
-        model,
-        feature_names=feature_names,
-        class_names=["Non-Tumor", "Tumor"],
-        filled=True,
-    )
-    plt.title("Decision Tree Visualization")
-    plt.show()
-
-
-def plot_feature_importance(model, feature_names):
+# Plot feature importance
+def plot_feature_importance(model, feature_names, model_name):
     importance = model.feature_importances_
-    indices = np.argsort(importance)[::-1]
+    indices = np.argsort(importance)[::-1]  # Sort features by importance
     plt.figure(figsize=(10, 6))
     plt.bar(range(len(importance)), importance[indices], align="center")
-    plt.xticks(range(len(importance)), [feature_names[i] for i in indices], rotation=45)
-    plt.title("Feature Importance in Random Forest")
+    plt.xticks(range(len(importance)), [feature_names[i] for i in indices], rotation=45, ha="right")
+    plt.title(f"Feature Importance ({model_name})")
+    plt.tight_layout()
     plt.show()
 
-
-def plot_shap_values(model, X, feature_names):
-    explainer = shap.Explainer(model)
-    shap_values = explainer(X)
-    shap.summary_plot(shap_values, X, feature_names=feature_names)
-
-
+# Train and evaluate models (updated to include feature importance)
 def train_and_evaluate_models(X_train, X_test, y_train, y_test, feature_names):
     classifiers = {
         "Logistic Regression": LogisticRegression(max_iter=1000, random_state=42),
@@ -157,19 +118,24 @@ def train_and_evaluate_models(X_train, X_test, y_train, y_test, feature_names):
     results = []
 
     for name, model in classifiers.items():
+        print(f"\nTraining and Evaluating Model: {name}")
         model.fit(X_train, y_train)
 
         y_pred = model.predict(X_test)
-        y_proba = (
-            model.predict_proba(X_test)[:, 1]
-            if hasattr(model, "predict_proba")
-            else None
-        )
+        y_proba = model.predict_proba(X_test)[:, 1] if hasattr(model, "predict_proba") else None
 
         accuracy = accuracy_score(y_test, y_pred)
         f1 = f1_score(y_test, y_pred)
         precision = precision_score(y_test, y_pred)
         recall = recall_score(y_test, y_pred)
+
+        print(
+            f"Accuracy: {accuracy:.4f}, F1 Score: {f1:.4f}, Precision: {precision:.4f}, Recall: {recall:.4f}"
+        )
+
+        confusion = confusion_matrix(y_test, y_pred)
+        print("\nConfusion Matrix:")
+        print(confusion)
 
         results.append(
             {
@@ -182,7 +148,7 @@ def train_and_evaluate_models(X_train, X_test, y_train, y_test, feature_names):
         )
 
         plt.figure(figsize=(6, 4))
-        sns.heatmap(confusion_matrix(y_test, y_pred), annot=True, fmt="d", cmap="Blues")
+        sns.heatmap(confusion, annot=True, fmt="d", cmap="Blues")
         plt.title(f"Confusion Matrix for {name}")
         plt.xlabel("Predicted")
         plt.ylabel("Actual")
@@ -191,6 +157,7 @@ def train_and_evaluate_models(X_train, X_test, y_train, y_test, feature_names):
         if y_proba is not None:
             fpr, tpr, _ = roc_curve(y_test, y_proba)
             roc_auc = roc_auc_score(y_test, y_proba)
+            print(f"ROC AUC Score: {roc_auc:.4f}")
             plt.plot(fpr, tpr, label=f"{name} (AUC = {roc_auc:.2f})")
             plt.plot([0, 1], [0, 1], "k--")
             plt.xlabel("False Positive Rate")
@@ -199,30 +166,73 @@ def train_and_evaluate_models(X_train, X_test, y_train, y_test, feature_names):
             plt.legend(loc="lower right")
             plt.show()
 
-        if name == "Decision Tree":
-            plot_decision_tree(model, feature_names)
-
-        if name == "Random Forest":
-            plot_feature_importance(model, feature_names)
-
-        if name == "Gradient Boosting":
-            plot_shap_values(model, X_test, feature_names)
+        # Feature importance for tree-based models
+        if name in ["Random Forest", "Gradient Boosting", "Decision Tree"]:
+            plot_feature_importance(model, feature_names, name)
 
     return pd.DataFrame(results)
 
+# Perform analysis with engineered features
+def perform_analysis_with_engineered_features(filepath):
+    data = pd.read_csv(filepath)
 
+    def clean_numeric(value):
+        if isinstance(value, str):
+            matches = re.findall(r"\d+(\.\d+)?", value)
+            if matches:
+                return float(matches[0])
+            try:
+                return float(value)
+            except ValueError:
+                return np.nan
+        return value
+
+    for column in data.columns.drop(["Class", "Image"]):
+        data[column] = data[column].apply(clean_numeric)
+
+    data = data.dropna()
+
+    data = engineer_features(data)
+
+    X = data.drop(columns=["Class", "Image"])
+    y = data["Class"]
+
+    scaler = StandardScaler()
+    X_scaled = scaler.fit_transform(X)
+
+    X_train, X_test, y_train, y_test = train_test_split(
+        X_scaled, y, test_size=0.3, random_state=42
+    )
+
+    classifiers = {
+        "Logistic Regression": LogisticRegression(max_iter=1000, random_state=42),
+        "SVM": SVC(probability=True, random_state=42),
+        "KNN": KNeighborsClassifier(),
+        "Decision Tree": DecisionTreeClassifier(random_state=42),
+        "Random Forest": RandomForestClassifier(random_state=42),
+        "Gradient Boosting": GradientBoostingClassifier(random_state=42),
+    }
+
+    print("\nCross-Validation Scores for All Models (Engineered Features):")
+    for name, model in classifiers.items():
+        scores = cross_val_score(model, X_scaled, y, cv=5, scoring="accuracy")
+        print(f"{name}:")
+        print(f"Scores: {scores}")
+        print(f"Mean Accuracy: {scores.mean():.4f}\n")
+
+    results = train_and_evaluate_models(X_train, X_test, y_train, y_test, X.columns)
+
+    print("\nModel Performance Summary (Engineered Features):")
+    print(results.to_string(index=False))
+
+
+# Main execution
 if __name__ == "__main__":
     filepath = r"archive\Brain Tumor.csv"
+
+    print("\n==== Original Analysis ====")
     X, y, data = load_and_preprocess_data(filepath)
     perform_eda(data)
 
-    X_train, X_test, y_train, y_test = train_test_split(
-        X, y, test_size=0.3, random_state=42
-    )
-
-    results = train_and_evaluate_models(
-        X_train, X_test, y_train, y_test, data.columns[:-1]
-    )
-
-    print("\nModel Performance Summary:")
-    print(results)
+    print("\n==== Analysis with Engineered Features ====")
+    perform_analysis_with_engineered_features(filepath)
