@@ -22,11 +22,11 @@ from sklearn.metrics import (
 )
 
 
-# Load and preprocess data
 def load_and_preprocess_data(filepath):
     data = pd.read_csv(filepath)
 
     def clean_numeric(value):
+        
         if isinstance(value, str):
             matches = re.findall(r"\d+(\.\d+)?", value)
             if matches:
@@ -51,15 +51,17 @@ def load_and_preprocess_data(filepath):
     return X_scaled, y, data
 
 
-# Perform exploratory data analysis
 def perform_eda(data):
     print("Columns in data:", data.columns)
     class_column = "Class"
 
     class_counts = data[class_column].value_counts()
     labels = [
-        f"Non-Tumor ({class_counts[0]} - {class_counts[0] / class_counts.sum() * 100:.2f}%)"
-        if label == 0 else f"Tumor ({class_counts[1]} - {class_counts[1] / class_counts.sum() * 100:.2f}%)"
+        (
+            f"Non-Tumor ({class_counts[0]} - {class_counts[0] / class_counts.sum() * 100:.2f}%)"
+            if label == 0
+            else f"Tumor ({class_counts[1]} - {class_counts[1] / class_counts.sum() * 100:.2f}%)"
+        )
         for label in class_counts.index
     ]
 
@@ -83,7 +85,6 @@ def perform_eda(data):
     plt.show()
 
 
-# Engineer features
 def engineer_features(data):
     data["Mean_Variance_Ratio"] = data["Mean"] / (data["Variance"] + 1e-5)
     data["Energy_Entropy_Product"] = data["Energy"] * data["Entropy"]
@@ -93,18 +94,23 @@ def engineer_features(data):
     data["Entropy_Log"] = np.log(data["Entropy"] + 1e-5)
     return data
 
-# Plot feature importance
+
 def plot_feature_importance(model, feature_names, model_name):
     importance = model.feature_importances_
-    indices = np.argsort(importance)[::-1]  # Sort features by importance
+    indices = np.argsort(importance)[::-1]
     plt.figure(figsize=(10, 6))
     plt.bar(range(len(importance)), importance[indices], align="center")
-    plt.xticks(range(len(importance)), [feature_names[i] for i in indices], rotation=45, ha="right")
+    plt.xticks(
+        range(len(importance)),
+        [feature_names[i] for i in indices],
+        rotation=45,
+        ha="right",
+    )
     plt.title(f"Feature Importance ({model_name})")
     plt.tight_layout()
     plt.show()
 
-# Train and evaluate models (updated to include feature importance)
+
 def train_and_evaluate_models(X_train, X_test, y_train, y_test, feature_names):
     classifiers = {
         "Logistic Regression": LogisticRegression(max_iter=1000, random_state=42),
@@ -122,7 +128,11 @@ def train_and_evaluate_models(X_train, X_test, y_train, y_test, feature_names):
         model.fit(X_train, y_train)
 
         y_pred = model.predict(X_test)
-        y_proba = model.predict_proba(X_test)[:, 1] if hasattr(model, "predict_proba") else None
+        y_proba = (
+            model.predict_proba(X_test)[:, 1]
+            if hasattr(model, "predict_proba")
+            else None
+        )
 
         accuracy = accuracy_score(y_test, y_pred)
         f1 = f1_score(y_test, y_pred)
@@ -166,13 +176,12 @@ def train_and_evaluate_models(X_train, X_test, y_train, y_test, feature_names):
             plt.legend(loc="lower right")
             plt.show()
 
-        # Feature importance for tree-based models
         if name in ["Random Forest", "Gradient Boosting", "Decision Tree"]:
             plot_feature_importance(model, feature_names, name)
 
     return pd.DataFrame(results)
 
-# Perform analysis with engineered features
+
 def perform_analysis_with_engineered_features(filepath):
     data = pd.read_csv(filepath)
 
@@ -226,7 +235,6 @@ def perform_analysis_with_engineered_features(filepath):
     print(results.to_string(index=False))
 
 
-# Main execution
 if __name__ == "__main__":
     filepath = r"archive\Brain Tumor.csv"
 
