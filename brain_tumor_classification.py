@@ -1,6 +1,7 @@
 import pandas as pd
 import numpy as np
 import re
+import matplotlib
 import matplotlib.pyplot as plt
 import seaborn as sns
 from sklearn.model_selection import train_test_split
@@ -10,6 +11,7 @@ from sklearn.linear_model import LogisticRegression
 from sklearn.svm import SVC
 from sklearn.neighbors import KNeighborsClassifier
 from sklearn.model_selection import cross_val_score
+from sklearn.calibration import calibration_curve, CalibrationDisplay
 from sklearn.tree import DecisionTreeClassifier
 from sklearn.metrics import (
     accuracy_score,
@@ -19,6 +21,8 @@ from sklearn.metrics import (
     confusion_matrix,
     roc_auc_score,
     roc_curve,
+    average_precision_score,
+    precision_recall_curve,
 )
 
 
@@ -129,22 +133,37 @@ def perform_eda(data):
     plt.figure(figsize=(10, 8))
     sns.heatmap(numeric_data.corr(), annot=True, cmap="coolwarm", fmt=".2f")
     plt.title("Feature Correlation Heatmap")
+    plt.tight_layout()
     plt.show()
 
 
 def plot_roc_curve(y_test, y_proba, model_name):
-    if y_proba is not None:
-        fpr, tpr, thresholds = roc_curve(y_test, y_proba)
-        roc_auc = roc_auc_score(y_test, y_proba)
-        plt.figure(figsize=(6, 4))
-        plt.plot(fpr, tpr, label=f"{model_name} (AUC = {roc_auc:.2f})")
-        plt.plot([0, 1], [0, 1], "k--", label="Random Guess")
-        plt.title(f"ROC Curve for {model_name}")
-        plt.xlabel("False Positive Rate")
-        plt.ylabel("True Positive Rate")
-        plt.legend(loc="lower right")
-        plt.grid()
-        plt.show()
+    fpr, tpr, thresholds = roc_curve(y_test, y_proba)
+    roc_auc = roc_auc_score(y_test, y_proba)
+    plt.figure(figsize=(6, 4))
+    plt.plot(fpr, tpr, label=f"AUC = {roc_auc:.2f}")
+    plt.plot([0, 1], [0, 1], "k--", label="Random Guess")
+    plt.title(f"ROC Curve for {model_name}")
+    plt.xlabel("False Positive Rate")
+    plt.ylabel("True Positive Rate")
+    plt.legend(loc="lower right")
+    plt.grid()
+    plt.tight_layout()
+    plt.show()
+
+
+def plot_precision_recall_curve(y_test, y_proba, model_name):
+    precision, recall, thresholds = precision_recall_curve(y_test, y_proba)
+    pr_auc = average_precision_score(y_test, y_proba)
+    plt.figure(figsize=(6, 4))
+    plt.plot(recall, precision, label=f"AP = {pr_auc:.2f}")
+    plt.title(f"Precision-Recall Curve for {model_name}")
+    plt.xlabel("Recall")
+    plt.ylabel("Precision")
+    plt.legend(loc="lower left")
+    plt.grid()
+    plt.tight_layout()
+    plt.show()
 
 
 def plot_feature_importance(model, feature_names, model_name):
@@ -160,6 +179,21 @@ def plot_feature_importance(model, feature_names, model_name):
         plt.show()
 
 
+def plot_calibration_curve(y_test, y_proba, model_name):
+    prob_true, prob_pred = calibration_curve(y_test, y_proba, n_bins=10)
+
+    plt.figure(figsize=(6, 6))
+    plt.plot(prob_pred, prob_true, marker="o", linewidth=1, label=model_name)
+    plt.plot([0, 1], [0, 1], linestyle="--", label="Perfectly Calibrated")
+    plt.title(f"Calibration Curve for {model_name}")
+    plt.xlabel("Mean Predicted Probability")
+    plt.ylabel("Fraction of Positives")
+    plt.legend(loc="upper left")
+    plt.grid()
+    plt.tight_layout()
+    plt.show()
+
+
 def train_and_evaluate_models_with_visuals(
     X_train, X_test, y_train, y_test, feature_names, version_name
 ):
@@ -167,12 +201,20 @@ def train_and_evaluate_models_with_visuals(
         "Logistic Regression": LogisticRegression(max_iter=1000, random_state=42),
         "SVM": SVC(probability=True, random_state=42),
         "KNN": KNeighborsClassifier(),
-        "Decision Tree": DecisionTreeClassifier(random_state=42),
-        "Random Forest": RandomForestClassifier(random_state=42),
+        "Decision Tree": DecisionTreeClassifier(random_state=42, max_depth=5),
+        "Random Forest": RandomForestClassifier(
+            random_state=42,
+            n_estimators=100,
+            max_depth=10,
+            min_samples_split=5,
+            min_samples_leaf=2,
+        ),
         "Gradient Boosting": GradientBoostingClassifier(random_state=42),
     }
 
     results = []
+    roc_data = []
+    pr_data = []
 
     for name, model in classifiers.items():
         print(f"\n[{version_name}] Training and Evaluating Model: {name}")
@@ -182,46 +224,112 @@ def train_and_evaluate_models_with_visuals(
         print(f"Mean CV Accuracy: {scores.mean():.4f}, Std Dev: {scores.std():.4f}")
 
         model.fit(X_train, y_train)
-        y_pred = model.predict(X_test)
-        y_proba = (
-            model.predict_proba(X_test)[:, 1]
-            if hasattr(model, "predict_proba")
-            else None
-        )
 
-        accuracy = accuracy_score(y_test, y_pred)
-        f1 = f1_score(y_test, y_pred)
-        precision = precision_score(y_test, y_pred)
-        recall = recall_score(y_test, y_pred)
+        y_train_pred = model.predict(X_train)
+        if hasattr(model, "predict_proba"):
+            y_train_proba = model.predict_proba(X_train)[:, 1]
+        else:
+            y_train_scores = model.decision_function(X_train)
+            y_train_proba = (y_train_scores - y_train_scores.min()) / (
+                y_train_scores.max() - y_train_scores.min()
+            )
+
+        train_accuracy = accuracy_score(y_train, y_train_pred)
+        train_f1 = f1_score(y_train, y_train_pred)
+        train_precision = precision_score(y_train, y_train_pred)
+        train_recall = recall_score(y_train, y_train_pred)
+        train_roc_auc = roc_auc_score(y_train, y_train_proba)
+
+        y_test_pred = model.predict(X_test)
+        if hasattr(model, "predict_proba"):
+            y_test_proba = model.predict_proba(X_test)[:, 1]
+        else:
+            y_test_scores = model.decision_function(X_test)
+            y_test_proba = (y_test_scores - y_test_scores.min()) / (
+                y_test_scores.max() - y_test_scores.min()
+            )
+
+        test_accuracy = accuracy_score(y_test, y_test_pred)
+        test_f1 = f1_score(y_test, y_test_pred)
+        test_precision = precision_score(y_test, y_test_pred)
+        test_recall = recall_score(y_test, y_test_pred)
+        test_roc_auc = roc_auc_score(y_test, y_test_proba)
+        test_pr_auc = average_precision_score(y_test, y_test_proba)
+
+        print(
+            f"Training Accuracy: {train_accuracy:.4f}, Testing Accuracy: {test_accuracy:.4f}"
+        )
+        print(f"Training F1 Score: {train_f1:.4f}, Testing F1 Score: {test_f1:.4f}")
+        print(
+            f"Training ROC AUC: {train_roc_auc:.4f}, Testing ROC AUC: {test_roc_auc:.4f}"
+        )
 
         results.append(
             {
                 "Model": name,
                 "CV Accuracy": scores.mean(),
-                "Accuracy": accuracy,
-                "F1 Score": f1,
-                "Precision": precision,
-                "Recall": recall,
+                "Train Accuracy": train_accuracy,
+                "Test Accuracy": test_accuracy,
+                "Train F1 Score": train_f1,
+                "Test F1 Score": test_f1,
+                "Train Precision": train_precision,
+                "Test Precision": test_precision,
+                "Train Recall": train_recall,
+                "Test Recall": test_recall,
+                "Train ROC AUC": train_roc_auc,
+                "Test ROC AUC": test_roc_auc,
+                "Test PR AUC": test_pr_auc,
             }
         )
 
-        print(
-            f"Accuracy: {accuracy:.4f}, F1 Score: {f1:.4f}, Precision: {precision:.4f}, Recall: {recall:.4f}"
-        )
-
-        confusion = confusion_matrix(y_test, y_pred)
+        confusion = confusion_matrix(y_test, y_test_pred)
         sns.heatmap(confusion, annot=True, fmt="d", cmap="Blues")
         plt.title(f"[{version_name}] Confusion Matrix for {name}")
         plt.xlabel("Predicted")
         plt.ylabel("Actual")
+        plt.tight_layout()
         plt.show()
 
-        if y_proba is not None:
-            plot_roc_curve(y_test, y_proba, f"{name} ({version_name})")
+        fpr, tpr, _ = roc_curve(y_test, y_test_proba)
+        roc_data.append((name, fpr, tpr, test_roc_auc))
+        plot_roc_curve(y_test, y_test_proba, f"{name} ({version_name})")
+
+        precision_vals, recall_vals, _ = precision_recall_curve(y_test, y_test_proba)
+        pr_data.append((name, precision_vals, recall_vals, test_pr_auc))
+        plot_precision_recall_curve(y_test, y_test_proba, f"{name} ({version_name})")
+
+        plot_calibration_curve(y_test, y_test_proba, f"{name} ({version_name})")
 
         if hasattr(model, "feature_importances_"):
             print(f"\n[{version_name}] Feature Importance for {name}:")
             plot_feature_importance(model, feature_names, f"{name} ({version_name})")
+
+    if roc_data:
+        plt.figure(figsize=(8, 6))
+        for model_name, fpr, tpr, roc_auc in roc_data:
+            plt.plot(fpr, tpr, label=f"{model_name} (AUC = {roc_auc:.2f})")
+        plt.plot([0, 1], [0, 1], "k--", label="Random Guess")
+        plt.title(f"Combined ROC Curves ({version_name})")
+        plt.xlabel("False Positive Rate")
+        plt.ylabel("True Positive Rate")
+        plt.legend(loc="lower right")
+        plt.grid()
+        plt.tight_layout()
+        plt.show()
+
+    if pr_data:
+        plt.figure(figsize=(8, 6))
+        for model_name, precision_vals, recall_vals, pr_auc in pr_data:
+            plt.plot(
+                recall_vals, precision_vals, label=f"{model_name} (AP = {pr_auc:.2f})"
+            )
+        plt.title(f"Combined Precision-Recall Curves ({version_name})")
+        plt.xlabel("Recall")
+        plt.ylabel("Precision")
+        plt.legend(loc="lower left")
+        plt.grid()
+        plt.tight_layout()
+        plt.show()
 
     return pd.DataFrame(results)
 
@@ -244,7 +352,6 @@ def train_and_compare(filepath):
         version_name="Original Features",
     )
 
- 
     X_engineered, y_engineered, engineered_data, engineered_feature_names = (
         load_and_preprocess_engineered_features(filepath)
     )
@@ -258,7 +365,7 @@ def train_and_compare(filepath):
         X_test_eng,
         y_train_eng,
         y_test_eng,
-        engineered_feature_names, 
+        engineered_feature_names,
         version_name="Engineered Features",
     )
 
