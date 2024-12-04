@@ -1,1 +1,1 @@
-"# brain_tumor_classification" 
+Brain tumor classification from numeric data derived from preprocessed images (included) for intro to data science project.

@@ -54,24 +54,6 @@ def load_and_preprocess_original_features(filepath):
     return X_scaled, y, data
 
 
-def engineer_features(data):
-    engineered_features = {
-        "Mean_Variance_Ratio": data["Mean"] / (data["Variance"] + 1e-5),
-        "Energy_Entropy_Product": data["Energy"] * data["Entropy"],
-        "Skewness_Kurtosis_Sum": data["Skewness"] + data["Kurtosis"],
-        "Dissimilarity_Normalized": data["Dissimilarity"] / (data["ASM"] + 1e-5),
-        "Contrast_Homogeneity_Diff": data["Contrast"] - data["Homogeneity"],
-        "Entropy_Log": np.log(data["Entropy"] + 1e-5),
-        "Intensity_Variability_Spread": (data["Variance"] * data["Entropy"])
-        / (data["Mean"] + 1e-5),
-        "Texture_Edge_Complexity": (data["Contrast"] * (1 - data["Homogeneity"]))
-        / (data["Coarseness"] + 1e-5),
-    }
-    for name, values in engineered_features.items():
-        data[name] = values
-    return list(engineered_features.keys()), data
-
-
 def load_and_preprocess_engineered_features(filepath):
     data = pd.read_csv(filepath)
 
@@ -100,6 +82,24 @@ def load_and_preprocess_engineered_features(filepath):
     X_scaled = scaler.fit_transform(X)
 
     return X_scaled, y, data, engineered_feature_names
+
+
+def engineer_features(data):
+    engineered_features = {
+        "Mean_Variance_Ratio": data["Mean"] / (data["Variance"] + 1e-5),
+        "Energy_Entropy_Product": data["Energy"] * data["Entropy"],
+        "Skewness_Kurtosis_Sum": data["Skewness"] + data["Kurtosis"],
+        "Dissimilarity_Normalized": data["Dissimilarity"] / (data["ASM"] + 1e-5),
+        "Contrast_Homogeneity_Diff": data["Contrast"] - data["Homogeneity"],
+        "Entropy_Log": np.log(data["Entropy"] + 1e-5),
+        "Intensity_Variability_Spread": (data["Variance"] * data["Entropy"])
+        / (data["Mean"] + 1e-5),
+        "Texture_Edge_Complexity": (data["Contrast"] * (1 - data["Homogeneity"]))
+        / (data["Coarseness"] + 1e-5),
+    }
+    for name, values in engineered_features.items():
+        data[name] = values
+    return list(engineered_features.keys()), data
 
 
 def perform_eda(data):
@@ -269,8 +269,8 @@ def train_and_evaluate_models_with_visuals(
                 "Model": name,
                 "CV Accuracy": scores.mean(),
                 "Train Accuracy": train_accuracy,
-                "Test Accuracy": test_accuracy,
                 "Train F1 Score": train_f1,
+                "Test Accuracy": test_accuracy,
                 "Test F1 Score": test_f1,
                 "Train Precision": train_precision,
                 "Test Precision": test_precision,
